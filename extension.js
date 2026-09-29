@@ -23,6 +23,8 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {WorkspaceIndicator} from './workspaceIndicator.js';
 
 const ICON_TEXTURE_SIZE = 24;
+const DRAG_ICON_SIZE = 32;
+const DRAGGED_BUTTON_OPACITY = 96;
 const DND_ACTIVATE_TIMEOUT = 500;
 
 const TOOLTIP_OFFSET = 6;
@@ -222,6 +224,14 @@ class BaseButton extends St.Button {
             visible: false,
         });
         Main.uiGroup.add_child(this._tooltip);
+
+        // Drag-to-reorder. The delegate is what DND hands to the drop
+        // target as `source`, so point it at the button itself.
+        this._delegate = this;
+        this._draggable = DND.makeDraggable(this, {restoreOnSuccess: false});
+        this._draggable.connect('drag-begin', this._onDragBegin.bind(this));
+        this._draggable.connect('drag-cancelled', this._onDragCancelled.bind(this));
+        this._draggable.connect('drag-end', this._onDragEnd.bind(this));
     }
 
     get active() {
@@ -384,6 +394,37 @@ class BaseButton extends St.Button {
     _onDestroy() {
         this._tooltip.destroy();
     }
+
+    _createDragIcon() {
+        throw new GObject.NotImplementedError(
+            `_createDragIcon in ${this.constructor.name}`);
+    }
+
+    getDragActor() {
+        return this._createDragIcon();
+    }
+
+    getDragActorSource() {
+        return this;
+    }
+
+    _onDragBegin() {
+        // A press-and-drag must not also count as a long press.
+        this._removeLongPressTimeout();
+        this._tooltip.hide();
+        this.opacity = DRAGGED_BUTTON_OPACITY;
+    }
+
+    _onDragCancelled() {
+        // Reordering happens live during the drag, so undo it on cancel.
+        const delegate = this.get_parent()?._delegate;
+        delegate?.restoreOrder?.();
+        this._onDragEnd();
+    }
+
+    _onDragEnd() {
+        this.opacity = 255;
+    }
 }
 
 class WindowButton extends BaseButton {
@@ -459,6 +500,17 @@ class WindowButton extends BaseButton {
     _onDestroy() {
         super._onDestroy();
         this._contextMenu.destroy();
+    }
+
+    _createDragIcon() {
+        const app =
+            Shell.WindowTracker.get_default().get_window_app(this.metaWindow);
+        return app
+            ? app.create_icon_texture(DRAG_ICON_SIZE)
+            : new St.Icon({
+                icon_name: 'application-x-executable',
+                icon_size: DRAG_ICON_SIZE,
+            });
     }
 }
 
@@ -706,6 +758,10 @@ class AppButton extends BaseButton {
         super._onDestroy();
         this._menu.destroy();
     }
+
+    _createDragIcon() {
+        return this.app.create_icon_texture(DRAG_ICON_SIZE);
+    }
 }
 
 class WindowList extends St.Widget {
@@ -739,6 +795,10 @@ class WindowList extends St.Widget {
             y_expand: true,
         });
         box.add_child(this._windowList);
+
+        // DND walks up from the picked button to find a drop target.
+        this._windowList._delegate = this;
+        this._orderKeys = [];
 
         this._windowList.connect('style-changed', () => {
             let node = this._windowList.get_theme_node();
@@ -968,6 +1028,7 @@ class WindowList extends St.Widget {
         this._settings.bind('display-all-workspaces',
             button, 'ignore-workspace', Gio.SettingsBindFlags.GET);
         this._windowList.add_child(button);
+        this._applyStoredOrder();
     }
 
     _removeApp(app) {
@@ -995,6 +1056,7 @@ class WindowList extends St.Widget {
         this._settings.bind('display-all-workspaces',
             button, 'ignore-workspace', Gio.SettingsBindFlags.GET);
         this._windowList.add_child(button);
+        this._applyStoredOrder();
     }
 
     _removeWindow(win) {
@@ -1025,6 +1087,11 @@ class WindowList extends St.Widget {
     }
 
     _onDragMotion(dragEvent) {
+        // Reorder drags are handled by handleDragOver(), not by the
+        // hover-to-activate timeout.
+        if (dragEvent.source instanceof BaseButton)
+            return DND.DragMotionResult.CONTINUE;
+
         if (Main.overview.visible ||
             !this.contains(dragEvent.targetActor)) {
             this._removeActivateTimeout();
@@ -1080,6 +1147,85 @@ class WindowList extends St.Widget {
         let windows = global.get_window_actors();
         for (let i = 0; i < windows.length; i++)
             windows[i].metaWindow.set_icon_geometry(null);
+    }
+
+    _buttonKey(button) {
+        if (button.metaWindow)
+            return `w:${button.metaWindow.get_stable_sequence()}`;
+        if (button.app)
+            return `a:${button.app.get_id()}`;
+        return null;
+    }
+
+    _isReorderSource(source) {
+        return source instanceof BaseButton &&
+               source.get_parent() === this._windowList;
+    }
+
+    handleDragOver(source, _actor, x) {
+        if (!this._isReorderSource(source))
+            return DND.DragMotionResult.CONTINUE;
+
+        const children = this._windowList.get_children();
+        const others = children.filter(c => c !== source);
+
+        // Only laid-out buttons have a meaningful x; hidden ones (windows on
+        // another workspace or monitor) all sit at 0, so position the drag
+        // against the visible buttons and let the hidden ones keep their
+        // place relative to the neighbour they follow.
+        const visual = others.filter(c => c.visible).sort((a, b) => a.x - b.x);
+        const slot = visual.filter(c => x > c.x + c.width / 2).length;
+
+        const rtl =
+            this._windowList.text_direction === Clutter.TextDirection.RTL;
+        const logical = rtl ? [...visual].reverse() : visual;
+        const logicalSlot = rtl ? logical.length - slot : slot;
+
+        // Anchor to the visible button we land after, so hidden buttons stay
+        // grouped with the neighbour they already follow.
+        const predecessor = logical[logicalSlot - 1];
+        const index = predecessor ? others.indexOf(predecessor) + 1 : 0;
+        others.splice(index, 0, source);
+        others.forEach(
+            (child, i) => this._windowList.set_child_at_index(child, i));
+
+        return DND.DragMotionResult.MOVE_DROP;
+    }
+
+    acceptDrop(source) {
+        if (!this._isReorderSource(source))
+            return false;
+
+        this._recordOrder();
+        return true;
+    }
+
+    restoreOrder() {
+        this._applyStoredOrder();
+    }
+
+    _recordOrder() {
+        const current = this._windowList.get_children()
+            .map(c => this._buttonKey(c))
+            .filter(k => k !== null);
+        // Keep keys belonging to the other grouping mode so that toggling
+        // grouping and back does not discard a hand-made order.
+        const stale = this._orderKeys.filter(k => !current.includes(k));
+        this._orderKeys = [...current, ...stale].slice(0, 500);
+    }
+
+    _applyStoredOrder() {
+        const rank = new Map(this._orderKeys.map((k, i) => [k, i]));
+        const rankOf = c => {
+            const key = this._buttonKey(c);
+            return rank.has(key) ? rank.get(key) : Number.MAX_SAFE_INTEGER;
+        };
+        // sort() is stable, so buttons with no recorded position keep their
+        // natural stable-sequence order at the end of the list.
+        this._windowList.get_children()
+            .sort((a, b) => rankOf(a) - rankOf(b))
+            .forEach((child, i) => this._windowList.set_child_at_index(child, i));
+        this._recordOrder();
     }
 }
 
