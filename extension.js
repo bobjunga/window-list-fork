@@ -798,6 +798,18 @@ class WindowList extends St.Widget {
 
         // DND walks up from the picked button to find a drop target.
         this._windowList._delegate = this;
+
+        // The list is x_align: START, so its allocation stops at the last
+        // button and the empty space to the side belongs to the panel.
+        // Give the panel a delegate too, mapping its coordinates onto the
+        // list so a drop past the end lands at the end.
+        this._delegate = {
+            handleDragOver: (source, actor, x, y, time) =>
+                this.handleDragOver(source, actor, this._panelToListX(x), y, time),
+            acceptDrop: (source, actor, x, y, time) =>
+                this.acceptDrop(source, actor, this._panelToListX(x), y, time),
+        };
+
         this._orderKeys = [];
 
         this._windowList.connect('style-changed', () => {
@@ -1155,6 +1167,12 @@ class WindowList extends St.Widget {
         if (button.app)
             return `a:${button.app.get_id()}`;
         return null;
+    }
+
+    _panelToListX(x) {
+        const [listX] = this._windowList.get_transformed_position();
+        const [panelX] = this.get_transformed_position();
+        return x - (listX - panelX);
     }
 
     _isReorderSource(source) {
