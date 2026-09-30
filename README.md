@@ -20,7 +20,8 @@ Tested on GNOME Shell 46 (Ubuntu 24.04, Wayland).
 ## Install
 
 ```bash
-git clone <this-repo> ~/.local/share/gnome-shell/extensions/window-list-fork@bobjunga.github.io
+git clone https://github.com/bobjunga/window-list-fork.git \
+  ~/.local/share/gnome-shell/extensions/window-list-fork@bobjunga.github.io
 cd ~/.local/share/gnome-shell/extensions/window-list-fork@bobjunga.github.io
 ./build.sh
 ```
