@@ -1,6 +1,6 @@
 {
   "extension-id": "window-list-fork",
-  "uuid": "window-list-fork@bobg.local",
+  "uuid": "window-list-fork@bobjunga.github.io",
   "name": "Window List (fork)",
   "description": "Local fork of GNOME's Window List extension. Displays a window list at the bottom of the screen. Forked from gnome-shell-extensions 46.5 so that extensions.gnome.org updates cannot overwrite local changes.",
   "settings-schema": "org.gnome.shell.extensions.window-list-fork",

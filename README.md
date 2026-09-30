@@ -11,7 +11,7 @@ never overwritten by extensions.gnome.org updates.
 
 | | Upstream | This fork |
 |---|---|---|
-| UUID | `window-list@gnome-shell-extensions.gcampax.github.com` | `window-list-fork@bobg.local` |
+| UUID | `window-list@gnome-shell-extensions.gcampax.github.com` | `window-list-fork@bobjunga.github.io` |
 | Settings schema | `org.gnome.shell.extensions.window-list` | `org.gnome.shell.extensions.window-list-fork` |
 | dconf path | `/org/gnome/shell/extensions/window-list/` | `/org/gnome/shell/extensions/window-list-fork/` |
 
@@ -20,8 +20,8 @@ Tested on GNOME Shell 46 (Ubuntu 24.04, Wayland).
 ## Install
 
 ```bash
-git clone <this-repo> ~/.local/share/gnome-shell/extensions/window-list-fork@bobg.local
-cd ~/.local/share/gnome-shell/extensions/window-list-fork@bobg.local
+git clone <this-repo> ~/.local/share/gnome-shell/extensions/window-list-fork@bobjunga.github.io
+cd ~/.local/share/gnome-shell/extensions/window-list-fork@bobjunga.github.io
 ./build.sh
 ```
 
@@ -30,7 +30,7 @@ place, and extension modules are imported once per shell process, so a running
 shell will not pick up a newly installed or edited extension. Once back:
 
 ```bash
-gnome-extensions enable window-list-fork@bobg.local
+gnome-extensions enable window-list-fork@bobjunga.github.io
 ```
 
 Disable the stock Window List first if it is enabled, or you will get two bars.
