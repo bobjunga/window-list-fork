@@ -769,7 +769,7 @@ class WindowList extends St.Widget {
         GObject.registerClass(this);
     }
 
-    constructor(perMonitor, monitor, settings) {
+    constructor(perMonitor, monitor, settings, orderStore) {
         super({
             name: 'panel',
             style_class: 'bottom-panel solid',
@@ -810,7 +810,10 @@ class WindowList extends St.Widget {
                 this.acceptDrop(source, actor, this._panelToListX(x), y, time),
         };
 
-        this._orderKeys = [];
+        // Owned by the extension, not by this widget: monitors-changed
+        // (a lid close, a display hotplug) destroys every WindowList, and a
+        // hand-made order must outlive that.
+        this._orderStore = orderStore;
 
         this._windowList.connect('style-changed', () => {
             let node = this._windowList.get_theme_node();
@@ -1226,14 +1229,25 @@ class WindowList extends St.Widget {
         const current = this._windowList.get_children()
             .map(c => this._buttonKey(c))
             .filter(k => k !== null);
-        // Keep keys belonging to the other grouping mode so that toggling
-        // grouping and back does not discard a hand-made order.
-        const stale = this._orderKeys.filter(k => !current.includes(k));
-        this._orderKeys = [...current, ...stale].slice(0, 500);
+        const present = new Set(current);
+
+        // Write the current order back into the slots the stored order
+        // already reserved for these buttons, rather than moving them to the
+        // front. Repopulating adds buttons one at a time, and promoting each
+        // one as it arrives would unpick the stored order button by button.
+        // Keys that are absent -- the other grouping mode's, or windows not
+        // currently listed -- keep their slot, so toggling grouping and back
+        // does not discard a hand-made order.
+        const pending = [...current];
+        const merged = this._orderStore.keys.map(
+            key => present.has(key) ? pending.shift() : key);
+
+        // Whatever is left never had a slot: a genuinely new button.
+        this._orderStore.keys = [...merged, ...pending].slice(0, 500);
     }
 
     _applyStoredOrder() {
-        const rank = new Map(this._orderKeys.map((k, i) => [k, i]));
+        const rank = new Map(this._orderStore.keys.map((k, i) => [k, i]));
         const rankOf = c => {
             const key = this._buttonKey(c);
             return rank.has(key) ? rank.get(key) : Number.MAX_SAFE_INTEGER;
@@ -1252,6 +1266,10 @@ export default class WindowListExtension extends Extension {
         super(metadata);
 
         this._windowLists = null;
+
+        // Held in a box rather than as a bare array so that the WindowLists
+        // sharing it all see reassignments.
+        this._orderStore = {keys: []};
     }
 
     enable() {
@@ -1275,7 +1293,8 @@ export default class WindowListExtension extends Extension {
 
         Main.layoutManager.monitors.forEach(monitor => {
             if (showOnAllMonitors || monitor === Main.layoutManager.primaryMonitor)
-                this._windowLists.push(new WindowList(showOnAllMonitors, monitor, this.getSettings()));
+                this._windowLists.push(new WindowList(
+                    showOnAllMonitors, monitor, this.getSettings(), this._orderStore));
         });
     }
 

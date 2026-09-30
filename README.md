@@ -45,11 +45,18 @@ coordinates onto the list, so drops in the empty space beside the buttons land
 at the end. The list reorders live as the pointer crosses a neighbour's
 midpoint; a cancelled drag restores the previous order.
 
-Order is remembered for the session in `WindowList._orderKeys`, keyed by window
+Order is remembered for the session on the extension object, keyed by window
 stable-sequence (ungrouped) or app id (grouped), and reapplied whenever a button
 is added — so a new window is appended rather than resetting the arrangement.
 Keys for the inactive grouping mode are retained, so toggling grouping and back
 does not discard a hand-made order.
+
+The store deliberately lives on the extension rather than on the list widget:
+`monitors-changed` destroys and rebuilds every `WindowList`, and that fires on a
+lid close or a display hotplug, not just on a real monitor change. Recording an
+order merges the current buttons back into the slots the stored order already
+holds for them, rather than moving them to the front, because repopulating adds
+buttons one at a time and promoting each arrival would unpick the stored order.
 
 Buttons for windows on another workspace or monitor are not laid out and all
 report `x = 0`, so the drop position is computed against the visible buttons
@@ -60,12 +67,14 @@ only and anchored to the visible predecessor.
 `extension.js` is the only file that differs from upstream in behaviour. After
 editing the GSettings schema, run `./build.sh` to recompile it.
 
-The index math behind reordering is covered by a standalone harness that mirrors
-`handleDragOver` over synthetic layouts (LTR, RTL, and layouts with hidden
-buttons):
+Two standalone harnesses mirror the ordering logic over synthetic inputs. One
+covers the drop-index math for LTR, RTL and layouts with hidden buttons; the
+other covers order persistence across list rebuilds, new and closed windows, and
+grouping toggles:
 
 ```bash
 node tests/reorder-math.mjs
+node tests/order-store.mjs
 ```
 
 To try changes without logging out, run a nested shell — a separate shell
