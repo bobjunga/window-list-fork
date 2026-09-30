@@ -16,14 +16,30 @@ function recordOrder(store, children) {
     store.keys = [...merged, ...pending].slice(0, 500);
 }
 
-// A fresh WindowList: destroy_all_children(), then one _addWindow per window
-// in stable-sequence order, each of which calls _applyStoredOrder().
+function storedRank(store, key) {
+    const index = store.keys.indexOf(key);
+    return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
+// A fresh WindowList: destroy_all_children(), then _populateWindowList()
+// adds one button at a time, each calling _applyStoredOrder(). The input is
+// sorted by stored rank first, falling back to stable sequence.
+// Returns the children plus a count of buttons that had to be moved after
+// being added -- every such move is a visible shuffle on screen.
 function repopulate(store, stableSequenceOrder) {
+    const sorted = [...stableSequenceOrder].sort((a, b) =>
+        storedRank(store, a) - storedRank(store, b) ||
+        stableSequenceOrder.indexOf(a) - stableSequenceOrder.indexOf(b));
+
     let children = [];
-    for (const key of stableSequenceOrder) {
-        children.push(key);
-        children = applyStoredOrder(store, children);
+    let shuffles = 0;
+    for (const key of sorted) {
+        const before = [...children, key];
+        children = applyStoredOrder(store, [...before]);
+        if (JSON.stringify(children) !== JSON.stringify(before))
+            shuffles++;
     }
+    children.shuffles = shuffles;
     return children;
 }
 
@@ -65,6 +81,20 @@ recordOrder(store, ['a:bar', 'a:foo']);
 check('  window keys survive grouping', store.keys, ['w3', 'w1', 'w2', 'a:bar', 'a:foo']);
 check('ungrouped order restored', repopulate(store, ['w1', 'w2', 'w3']), ['w3', 'w1', 'w2']);
 check('regrouped order restored', repopulate(store, ['a:foo', 'a:bar']), ['a:bar', 'a:foo']);
+
+// A rebuild must not be visible: buttons are added in their final position,
+// so no button is ever moved after being added.
+store = {keys: ['w1', 'w2', 'w3']};
+recordOrder(store, ['w3', 'w1', 'w2']);
+check('rebuild moves no button after adding it',
+    repopulate(store, ['w1', 'w2', 'w3']).shuffles, 0);
+store = {keys: ['a:foo', 'a:bar']};
+recordOrder(store, ['a:bar', 'a:foo']);
+check('  same when grouped',
+    repopulate(store, ['a:foo', 'a:bar']).shuffles, 0);
+store = {keys: []};
+check('  and on a first run with no stored order',
+    repopulate(store, ['w1', 'w2', 'w3']).shuffles, 0);
 
 console.log(fails ? `\n${fails} FAILURE(S)` : '\nall cases pass');
 process.exit(fails ? 1 : 0);

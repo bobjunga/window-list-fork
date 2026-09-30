@@ -1006,17 +1006,25 @@ class WindowList extends St.Widget {
     _populateWindowList() {
         this._windowList.destroy_all_children();
 
+        // Add buttons in their final order. Adding in stable-sequence order
+        // and letting _applyStoredOrder() correct after each one works, but
+        // the correction is visible as the list shuffling itself into place
+        // every time a rebuild happens -- on every lid close and open.
         if (!this._grouped) {
             let windows = global.get_window_actors().sort((w1, w2) => {
-                return w1.metaWindow.get_stable_sequence() -
-                       w2.metaWindow.get_stable_sequence();
+                const s1 = w1.metaWindow.get_stable_sequence();
+                const s2 = w2.metaWindow.get_stable_sequence();
+                return this._storedRank(this._windowKey(w1.metaWindow)) -
+                       this._storedRank(this._windowKey(w2.metaWindow)) ||
+                       s1 - s2;
             });
             for (let i = 0; i < windows.length; i++)
                 this._addWindow(windows[i].metaWindow);
         } else {
             let apps = this._appSystem.get_running().sort((a1, a2) => {
-                return _getAppStableSequence(a1) -
-                       _getAppStableSequence(a2);
+                return this._storedRank(this._appKey(a1)) -
+                       this._storedRank(this._appKey(a2)) ||
+                       _getAppStableSequence(a1) - _getAppStableSequence(a2);
             });
             for (let i = 0; i < apps.length; i++)
                 this._addApp(apps[i]);
@@ -1164,12 +1172,25 @@ class WindowList extends St.Widget {
             windows[i].metaWindow.set_icon_geometry(null);
     }
 
+    _windowKey(metaWindow) {
+        return `w:${metaWindow.get_stable_sequence()}`;
+    }
+
+    _appKey(app) {
+        return `a:${app.get_id()}`;
+    }
+
     _buttonKey(button) {
         if (button.metaWindow)
-            return `w:${button.metaWindow.get_stable_sequence()}`;
+            return this._windowKey(button.metaWindow);
         if (button.app)
-            return `a:${button.app.get_id()}`;
+            return this._appKey(button.app);
         return null;
+    }
+
+    _storedRank(key) {
+        const index = this._orderStore.keys.indexOf(key);
+        return index === -1 ? Number.MAX_SAFE_INTEGER : index;
     }
 
     _panelToListX(x) {

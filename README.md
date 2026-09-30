@@ -51,6 +51,12 @@ is added — so a new window is appended rather than resetting the arrangement.
 Keys for the inactive grouping mode are retained, so toggling grouping and back
 does not discard a hand-made order.
 
+`_populateWindowList()` sorts by the stored order before adding buttons, falling
+back to stable sequence, so a rebuilt list is drawn in its final arrangement.
+Adding in stable-sequence order and letting the stored order correct afterwards
+gives the same result, but the correction is visible as the list shuffling
+itself into place on every lid close and open.
+
 The store deliberately lives on the extension rather than on the list widget:
 `monitors-changed` destroys and rebuilds every `WindowList`, and that fires on a
 lid close or a display hotplug, not just on a real monitor change. Recording an
