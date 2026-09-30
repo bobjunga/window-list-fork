@@ -1011,13 +1011,19 @@ class WindowList extends St.Widget {
         // the correction is visible as the list shuffling itself into place
         // every time a rebuild happens -- on every lid close and open.
         if (!this._grouped) {
-            let windows = global.get_window_actors().sort((w1, w2) => {
-                const s1 = w1.metaWindow.get_stable_sequence();
-                const s2 = w2.metaWindow.get_stable_sequence();
-                return this._storedRank(this._windowKey(w1.metaWindow)) -
-                       this._storedRank(this._windowKey(w2.metaWindow)) ||
-                       s1 - s2;
-            });
+            // get_window_actors() still includes windows that are unmanaged
+            // and merely playing out their destroy animation. Giving one a
+            // button shows an element that vanishes a moment later, when the
+            // window's 'unmanaged' handler removes it again.
+            let windows = global.get_window_actors()
+                .filter(actor => !actor.is_destroyed())
+                .sort((w1, w2) => {
+                    const s1 = w1.metaWindow.get_stable_sequence();
+                    const s2 = w2.metaWindow.get_stable_sequence();
+                    return this._storedRank(this._windowKey(w1.metaWindow)) -
+                           this._storedRank(this._windowKey(w2.metaWindow)) ||
+                           s1 - s2;
+                });
             for (let i = 0; i < windows.length; i++)
                 this._addWindow(windows[i].metaWindow);
         } else {
